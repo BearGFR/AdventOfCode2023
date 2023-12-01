@@ -1,0 +1,374 @@
+/* REXX */                                                              00010001
+/*                                                                      00020001
+    Advent of Code 2023 - Puzzle #1                                     00030001
+                                                                        00040001
+    * Read input data records                                           00050001
+    * **part 1**                                                        00060001
+    * For each record, form a 2 digit value consisting of the first     00070001
+      and last digit on each record (ignore non-numerics)               00080001
+    * Sum all the resulting 2-digit values                              00090001
+                                                                        00100001
+    * **part 2**                                                        00110001
+    * Same as above except the values MAY BE represented by the         00120001
+      word name of a digit - take whichever is leftmost/rightmost       00130001
+                                                                        00140001
+    Input:                                                              00150002
+         Datasets:                                                      00160001
+              INPUT (Required)                                          00170001
+                   Input data records                                   00180001
+                                                                        00190001
+         Parameters:                                                    00200001
+              (none)                                                    00210001
+                   Description                                          00220001
+    Output:  Sum of all derived 2-digit values                          00230001
+         Return code:                                                   00240001
+              00: No potential problems found                           00250001
+              04: Warnings                                              00260001
+              08: Serious errors                                        00270001
+              12: Etc                                                   00280001
+         Datasets:                                                      00290001
+              (none)                                                    00300002
+                                                                        00310002
+                                                                        00320001
+    J.R. Garrett (c) Garrett Family Enterprises LLC                     00330001
+                                                                        00340001
+*/                                                                      00350001
+                                                                        00360001
+/* My 'standard' REXX boilerplate template code follows                 00361002
+   Find "Meat" to locate the coding goodness */                         00362002
+                                                                        00363002
+/* Setup */                                                             00370001
+parse SOURCE . . THIS_ .;                                               00380001
+THIS_ = STRIP(THIS_,'Both');                                            00390001
+MAXRC = 0;                                                              00400001
+EXPOSE_ = 'PARMS.',                                                     00410001
+    'PARMSO.',                                                          00420001
+    ;                                                                   00430001
+_ISPF = 'NO'; /* Are ISPF services required? */                         00440001
+_LOG = 'NO';  /* Allocate a message log file? */                        00450001
+PARMS.0 = 0;  /* Parameter count */                                     00460001
+                                                                        00470001
+ARG _UCARGS;     /* Input arguments in upper case */                    00480001
+parse arg _ARGS; /* Input arguments "as is" */                          00490001
+                                                                        00500001
+/* Check for DEBUG(), process if present, and if so,                    00510001
+   also remove from parameters */                                       00520001
+if POS('DEBUG(',_UCARGS) > 0 then,                                      00530001
+    do;                                                                 00540001
+         /* Extract the value */                                        00550001
+         parse value _UCARGS with,                                      00560001
+              PREFIX 'DEBUG(' PARMS.DEBUG ')' SUFFIX;                   00570001
+         /* Isolate any prefix and suffix */                            00580001
+         PARMS.DEBUG = STRIP(PARMS.DEBUG,'Both');                       00590001
+         if LEFT(PARMS.DEBUG,1) = 'Y' then,                             00600001
+              if SYSVAR('SYSENV') = 'BACK' then,                        00610001
+                   trace i;                                             00620001
+              else,                                                     00630001
+                   trace ?i;                                            00640001
+         else,                                                          00650001
+              PARMS.DEBUG = 'N';                                        00660001
+                                                                        00670001
+         /* Now strip from 'as is' parms */                             00680001
+         _PREFIXLEN = LENGTH(PREFIX);                                   00690001
+         _SUFFIXLEN = LENGTH(STRIP(SUFFIX,'Both'));                     00700001
+         _SUFFIXPOS = POS(SUFFIX,_UCARGS);                              00710001
+         if _PREFIXLEN > 0 then                                         00720001
+              _PFX = LEFT(_ARGS,_PREFIXLEN);                            00730001
+         else,                                                          00740001
+              _PFX = '';                                                00750001
+         if _SUFFIXLEN > 0 then                                         00760001
+              _SFX = SUBSTR(_ARGS,_SUFFIXPOS);                          00770001
+         else,                                                          00780001
+              _SFX = '';                                                00790001
+         /* Reconstruct parameter strings */                            00800001
+         _ARGS = _PFX _SFX;                                             00810001
+         _UCARGS = TRANSLATE(_ARGS);                                    00820001
+    end;                                                                00830001
+                                                                        00840001
+/* If ISPF is required, make it so */                                   01020001
+if _ISPF = 'YES' then,                                                  01030001
+    do;                                                                 01040001
+         if SYSVAR('SYSISPF') <> 'ACTIVE' then,                         01050001
+             do;                                                        01060001
+                  "ISPSTART CMD(%"THIS_" "INPARMS")",                   01070001
+                       "BDISPMAX(999999)",                              01080001
+                       ;                                                01090001
+                  return RC;                                            01100001
+             end;                                                       01110001
+                                                                        01120001
+         address ISPEXEC "CONTROL ERRORS RETURN";                       01130001
+    end;                                                                01140001
+                                                                        01150001
+/* Parameter extraction */                                              01160001
+_WORK = _UCARGS;                                                        01170001
+do ZIX = 1 WHILE POS('(',_WORK) > 0;                                    01180001
+    parse value STRIP(_WORK,'Both'),                                    01190001
+         with _PARM '(' _VALUE ')' _WORK;                               01200001
+    PARMS.ZIX = _PARM;                                                  01210001
+    PARMS._PARM = _VALUE;                                               01220001
+    PARMS.0 = ZIX;                                                      01230001
+    /* Also store value in original case */                             01240001
+    _OFFSET = POS(_PARM'(',_UCARGS) + LENGTH(_PARM'(');                 01250001
+    PARMSO._PARM = SUBSTR(_ARGS,_OFFSET,LENGTH(PARMS._PARM));           01260001
+end ZIX;                                                                01270001
+                                                                        01280001
+/* Set up message logging, if required or requested */                  01290001
+if _LOG = 'YES',                                                        01300001
+  |,                                                                    01310001
+   LEFT(PARMS.LOG,1) = 'Y' then,                                        01320001
+    do;                                                                 01330001
+        if LISTDSI('$SAYLOG$ FILE') > 4 then,                           01340001
+             if SYSREASON <> 3 then,                                    01350001
+                  do;                                                   01360001
+                       "ALLOC FI($SAYLOG$)",                            01370001
+                            "UNIT(3390)",                               01380001
+                            "SPACE(5 5)",                               01390001
+                            "CYLINDERS",                                01400001
+                            "RELEASE",                                  01410001
+                            "NEW",                                      01420001
+                            "CATALOG",                                  01430001
+                            "BLKSIZE(0)",                               01440001
+                            "LRECL(2044)",                              01450001
+                            "RECFM(V B)"                                01460001
+                       _LOGCLOSE = 'Y';                                 01470001
+                  end;                                                  01480001
+    end;                                                                01490001
+/* end logging */                                                       01500001
+                                                                        01510001
+/* Set return logic appropriate to our environment */                   01520001
+_END_EXEC = 'return MAXRC;';                                            01530001
+if _LOGCLOSE = 'Y' then,                                                01540001
+    _END_EXEC = '"EXECIO 0 DISKW $SAYLOG$ (FINIS";',                    01550001
+         '"FREE FI($SAYLOG$)";',                                        01560001
+         _END_EXEC;                                                     01570001
+/* If running under ISPF, then exposing the return code to              01580001
+   the 'outside world' requires saving it as the shared pool            01590001
+   variable: ZISPFRC */                                                 01600001
+if SYSVAR('SYSISPF') = 'ACTIVE' then,                                   01610001
+    _END_EXEC = 'ZISPFRC = MAXRC;',                                     01620001
+         'address ISPEXEC "VPUT (ZISPFRC) SHARED";',                    01630001
+         _END_EXEC;                                                     01640001
+                                                                        01650001
+/* Environment Validation */                                            01660002
+/* Sample:                                                              01670001
+if SYMBOL('PARMS.PARM') <> 'VAR' then,                                  01680001
+    do;                                                                 01690001
+         call SAYLOG TIME(),                                            01700001
+              THIS_,                                                    01710001
+              '*ERROR* REQUIRED PARAMETER',                             01720001
+              'PARM()',                                                 01730001
+              'NOT PROVIDED - ABORTING';                                01740001
+         MAXRC = MAX(MAXRC,8);                                          01750001
+    end;                                                                01760001
+else,                                                                   01770001
+    do;                                                                 01780001
+         if /* check for specific values, format. etc.                  01790001
+               if required */ then,                                     01800001
+              do;                                                       01810001
+                   call SAYLOG TIME(),                                  01820001
+                        THIS_,                                          01830001
+                        '*ERROR* PARAMETER VALUE',                      01840001
+                        'PARM('PARMS.PARM')',                           01850001
+                        'IS INVALID - ABORTING';                        01860001
+                   MAXRC = MAX(MAXRC,8);                                01870001
+              end;                                                      01880001
+    end;                                                                01890001
+*/                                                                      01900001
+if LISTDSI('INPUT FILE') > 4 then,                                      01901003
+    if SYSREASON <> 3 then,                                             01902003
+         do;                                                            01903003
+              call SAYLOG DATE(),                                       01903103
+                   TIME(),                                              01903203
+                   THIS_,                                               01903303
+                   '*ERROR*: REQUIRE FILE INPUT NOT ALLOCATED',         01903403
+                   ;                                                    01903503
+              MAXRC = MAX(MAXRC,8);                                     01903603
+         end;                                                           01904003
+                                                                        01910001
+/* If errors were found, abort - but only after having                  01911002
+   presented the user with *all* the problems.                          01912002
+   (I --hate-- code that beats the user to death, one                   01913002
+    error at a time, aborting after it finds the first                  01914002
+    issue) */                                                           01915002
+if MAXRC > 4 then,                                                      01920001
+    do;                                                                 01930001
+         call SAYLOG DATE(),                                            01940001
+              TIME(),                                                   01950001
+              THIS_,                                                    01960001
+              'ABORTING DUE TO ABOVE ERRORS';                           01970001
+         interpret _END_EXEC;                                           01980001
+    end;                                                                01990001
+                                                                        02000001
+/* Meat begins here */                                                  02010001
+                                                                        02020001
+/* Set up some useful 'stuff' */                                        02030001
+_SUM.PART1 = 0;                                                         02040001
+_SUM.PART2 = 0;                                                         02050001
+                                                                        02060001
+/* word equivlants of digits */                                         02070001
+_DIGITS = 'ZERO',                                                       02080001
+    'ONE',                                                              02090001
+    'TWO',                                                              02100001
+    'THREE',                                                            02110001
+    'FOUR',                                                             02120001
+    'FIVE',                                                             02130001
+    'SIX',                                                              02140001
+    'SEVEN',                                                            02150001
+    'EIGHT',                                                            02160001
+    'NINE',                                                             02170001
+    ;                                                                   02180001
+/* Lookup structure associating 'digit words' with their values */      02190002
+do ZIX = 1 to WORDS(_DIGITS);                                           02200001
+    _DIGIT = WORD(_DIGITS,ZIX);                                         02210001
+    _VALUES._DIGIT = ZIX - 1;                                           02220001
+end ZIX;                                                                02230001
+                                                                        02240001
+/* Time to get to work */                                               02250001
+do READLOOP = 1;                                                        02260001
+    "EXECIO 1 DISKR INPUT";                                             02270001
+    if RC <> 0 then,                                                    02280001
+         do;                                                            02290001
+              "EXECIO 0 DISKR INPUT (FINIS";                            02300001
+              leave READLOOP;                                           02310001
+         end;                                                           02320001
+    parse upper pull BUFFER;                                            02330001
+    parse value BUFFER with,                                            02340001
+          _TEXT .;                                                      02350001
+    /* Find leftmost digit */                                           02360001
+    /* defaults 'just in case' we don't find any */                     02370001
+    _LEFT = 0;                                                          02380001
+    _LEFTPOS = LENGTH(_TEXT);                                           02390001
+    /* Scan forwards for digits */                                      02400001
+    do ZIX = 1 to LENGTH(_TEXT);                                        02410001
+         if DATATYPE(SUBSTR(_TEXT,ZIX,1)) = 'NUM' then,                 02420001
+              do;                                                       02430001
+                   _LEFT = SUBSTR(_TEXT,ZIX,1);                         02440001
+                   _LEFTPOS = POS(_LEFT,_TEXT);                         02450001
+                   leave ZIX;                                           02460001
+              end;                                                      02470001
+    end ZIX;                                                            02480001
+                                                                        02490001
+    /* Find rightmost digit */                                          02500001
+    /* defaults 'just in case' we don't find any */                     02510001
+    _RIGHT = 0;                                                         02520001
+    _RIGHTPOS = 1;                                                      02530001
+    do ZIX = LENGTH(_TEXT) to 1 by -1;                                  02540001
+         if DATATYPE(SUBSTR(_TEXT,ZIX,1)) = 'NUM' then,                 02550001
+              do;                                                       02560001
+                   _RIGHT = SUBSTR(_TEXT,ZIX,1);                        02570001
+                   _RIGHTPOS = ZIX;                                     02580001
+                   leave ZIX;                                           02590001
+              end;                                                      02600001
+    end ZIX;                                                            02610001
+                                                                        02620001
+    _SUM.PART1 = _SUM.PART1 + ((_LEFT * 10) + _RIGHT);                  02630001
+                                                                        02640001
+    /* Part2 - look for 'word digits' that are to the                   02650002
+       left or right of what we found in part1 */                       02660001
+                                                                        02670001
+    /* Left side first */                                               02680001
+    _TARGET = LEFT(TRANSLATE(_TEXT),_LEFTPOS);                          02690001
+    _WORDPOS = LENGTH(_TARGET);                                         02690101
+    do ZIX = 1 to WORDS(_DIGITS);                                       02691001
+         _DIGIT = WORD(_DIGITS,ZIX);                                    02691101
+         _NEWPOS = POS(_DIGIT,_TARGET);                                 02691201
+         if _NEWPOS > 0,                                                02692001
+           &,                                                           02692101
+            _NEWPOS < _WORDPOS then,                                    02692201
+              do;                                                       02692301
+                   _LEFT = _VALUES._DIGIT;                              02692401
+                   _WORDPOS = _NEWPOS;                                  02692501
+              end;                                                      02692601
+    end ZIX;                                                            02692701
+                                                                        02692801
+    /* Now scan the right side */                                       02692901
+    _RIGHTPOS = _RIGHTPOS;                                              02693101
+    _TARGET = SUBSTR(TRANSLATE(_TEXT),_RIGHTPOS);                       02693201
+    _WORDPOS = _RIGHTPOS - (LENGTH(_TEXT) - LENGTH(_TARGET));           02694001
+    do ZIX = 1 to WORDS(_DIGITS);                                       02695001
+         _DIGIT = WORD(_DIGITS,ZIX);                                    02696001
+         _NEWPOS = LASTPOS(_DIGIT,_TARGET);                             02697001
+         if _NEWPOS > 0,                                                02698001
+           &,                                                           02699001
+            _NEWPOS > _WORDPOS then,                                    02699101
+              do;                                                       02699201
+                   _RIGHT = _VALUES._DIGIT;                             02699301
+                   _WORDPOS = _NEWPOS;                                  02699401
+              end;                                                      02699501
+    end ZIX;                                                            02699601
+    /* Uncomment for testing/validation if desired                      02699702
+    say _TEXT,                                                          02699801
+         _LEFT,                                                         02699901
+         _RIGHT;                                                        02700001
+       */                                                               02700101
+                                                                        02700201
+    _SUM.PART2 = _SUM.PART2 + ((_LEFT * 10) + _RIGHT);                  02700301
+end READLOOP;                                                           02701001
+                                                                        02710001
+/* Display results */                                                   02711002
+call SAYLOG DATE(),                                                     02712002
+    TIME(),                                                             02713002
+    THIS_,                                                              02714002
+    'RESULTS:';                                                         02715003
+call SAYLOG DATE(),                                                     02715103
+    TIME(),                                                             02715203
+    THIS_,                                                              02715303
+    COPIES(' ',LENGTH('RESULTS:')),                                     02715403
+    'PART1 (NUMERALS ONLY):',                                           02715503
+    _SUM.PART1;                                                         02716003
+call SAYLOG DATE(),                                                     02716103
+    TIME(),                                                             02716203
+    THIS_,                                                              02716303
+    COPIES(' ',LENGTH('RESULTS:')),                                     02716403
+    'PART2 (NUMERALS AND/OR WORDS):',                                   02716603
+    _SUM.PART2;                                                         02716703
+                                                                        02740001
+interpret _END_EXEC;                                                    02750001
+                                                                        02760001
+SAYLOG:                                                                 02770001
+    procedure expose (EXPOSE_);                                         02780001
+                                                                        02790001
+    /*                                                                  02800001
+         Function to "fork" a message both to the terminal user and to  02810001
+         a log dataset, if one has been provided.                       02820001
+                                                                        02830001
+         Input:                                                         02840001
+              Parameters:                                               02850001
+                   raw text of message                                  02860001
+                                                                        02870001
+              Datasets:                                                 02880001
+                   $SAYLOG$         : (Optional)                        02890001
+                                      If provided, must be allocated to 02900001
+                                      a dataset that can be written to. 02910001
+                                                                        02920001
+         Output:                                                        02930001
+              Function result:                                          02940001
+                   Numeric return code                                  02950001
+                                                                        02960001
+     */                                                                 02970001
+                                                                        02980001
+     parse SOURCE . . THIS_ .;                                          02990001
+     THIS_ = STRIP(THIS_,'Both')'_SAYLOG';                              03000001
+     MAXRC = 0;                                                         03010001
+                                                                        03020001
+     /* Process incoming parameters */                                  03030001
+     parse arg _MSG_TEXT;                                               03040001
+                                                                        03050001
+     /* Very simple code... */                                          03060001
+     say _MSG_TEXT;                                                     03070001
+                                                                        03080001
+     /* Were we provided an output file? */                             03090001
+     if LISTDSI('$SAYLOG$ FILE') > 4 then,                              03100001
+         if SYSREASON <> 3 then,                                        03110001
+              return MAXRC; /* Nope, we're done */                      03120001
+                                                                        03130001
+     /* Looks like we have one */                                       03140001
+     queue DATE('Standard'),                                            03150001
+           TIME(),                                                      03160001
+           SYSVAR('SYSUID'),                                            03170001
+           _MSG_TEXT;                                                   03180001
+     "EXECIO 1 DISKW $SAYLOG$";                                         03190001
+     MAXRC = MAX(MAXRC,RC);                                             03200001
+                                                                        03210001
+     return MAXRC;                                                      03220001
+                                                                        03230001
