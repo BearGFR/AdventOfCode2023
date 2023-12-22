@@ -1,0 +1,725 @@
+/* REXX */                                                              00010000
+/*                                                                      00020000
+    Advent of Code 2023 - Puzzle #5 - Puzzle of the Seeds               00030000
+                                                                        00040000
+    * Read input data records consisting of a list of seeds             00050009
+      followed by a set of translate maps. (each type delimited         00051009
+      by a single blank record)                                         00052009
+                                                                        00053009
+    * **part 1**                                                        00060000
+      Put all the seeds through the translate maps (output of one       00070009
+      becoming the input to the next) until all the maps have           00080009
+      been applied.  What is the lowest result value after all          00081009
+      the input seeds have been put through all the tables?             00082009
+                                                                        00083009
+    * **part 2**                                                        00090000
+      Treat the input list of seeds as ordered pairs, the first         00091009
+      of the pair being an initial seed 'value', the second of the      00092009
+      pair treated as a count of how many seed values exist in the      00093009
+      'range' of seeds as consecutive values, beginning with the        00094009
+      first.  Determine a new 'lowest result' after treating            00095009
+      the value pairs as initial:count during each translation          00100009
+      through each of the mapping tables.                               00101009
+                                                                        00102009
+    Input:                                                              00110000
+         Datasets:                                                      00120000
+              INPUT05 (Required)                                        00130003
+                   Input data records                                   00140000
+                                                                        00150000
+         Parameters:                                                    00160000
+              (none)                                                    00170000
+                   Description                                          00180000
+                                                                        00181009
+    Output:  "Lowest" location value after all maps have                00190009
+              been applied.                                             00191009
+         Return code:                                                   00200000
+              00: No potential problems found                           00210000
+              04: Warnings                                              00220000
+              08: Serious errors                                        00230000
+              12: Etc                                                   00240000
+         Datasets:                                                      00250000
+              (none)                                                    00260000
+                                                                        00270000
+    NOTES:  This one ate my lunch at part 2 for several days            00280009
+            because there was no way that the 'brute force'             00281009
+            approach of translating every single seed value             00282009
+            in start:range was ever going to finish, given the          00283009
+            sizes of the ranges.                                        00284009
+            What worked was breaking the input initial:range            00285009
+            pair(s) each mapping step into a number of smaller          00286009
+            fragments such that each fragment would "fit" into a        00287009
+            single translation range in the current map being           00288009
+            employed, and doing recursive MAP_LOOKUP calls with         00289009
+            any such fragment that was 'outside' the current mapping    00289109
+            record.                                                     00289209
+                                                                        00289309
+    J.R. Garrett (c) Garrett Family Enterprises LLC                     00290000
+                                                                        00300000
+*/                                                                      00310000
+                                                                        00320000
+/* My 'standard' REXX boilerplate template code follows                 00330000
+   Find "Meat" to locate the coding goodness */                         00340000
+                                                                        00350000
+/* Setup */                                                             00360000
+parse SOURCE . . THIS_ .;                                               00370000
+THIS_ = STRIP(THIS_,'Both');                                            00380000
+MAXRC = 0;                                                              00390000
+EXPOSE_ = 'PARMS.',                                                     00400000
+    'PARMSO.',                                                          00410000
+    '_DIGITS',                                                          00420001
+    ;                                                                   00430000
+_ISPF = 'NO'; /* Are ISPF services requiRED? */                         00440000
+_LOG = 'NO';  /* Allocate a message log file? */                        00450000
+PARMS.0 = 0;  /* Parameter COUNT */                                     00460000
+                                                                        00470000
+ARG _UCARGS;     /* Input arguments in upper case */                    00480000
+parse arg _ARGS; /* Input arguments "as is" */                          00490000
+                                                                        00500000
+/* Check for DEBUG(), process if present, and if so,                    00510000
+   also remove from parameters */                                       00520000
+if POS('DEBUG(',_UCARGS) > 0 then,                                      00530000
+    do;                                                                 00540000
+         /* Extract the value */                                        00550000
+         parse value _UCARGS with,                                      00560000
+              PREFIX 'DEBUG(' PARMS.DEBUG ')' SUFFIX;                   00570000
+         /* Isolate any prefix and suffix */                            00580000
+         PARMS.DEBUG = STRIP(PARMS.DEBUG,'Both');                       00590000
+         if LEFT(PARMS.DEBUG,1) = 'Y' then,                             00600000
+              if SYSVAR('SYSENV') = 'BACK' then,                        00610000
+                   trace i;                                             00620000
+              else,                                                     00630000
+                   trace ?i;                                            00640000
+         else,                                                          00650000
+              PARMS.DEBUG = 'N';                                        00660000
+                                                                        00670000
+         /* Now strip from 'as is' parms */                             00680000
+         _PREFIXLEN = LENGTH(PREFIX);                                   00690000
+         _SUFFIXLEN = LENGTH(STRIP(SUFFIX,'Both'));                     00700000
+         _SUFFIXPOS = POS(SUFFIX,_UCARGS);                              00710000
+         if _PREFIXLEN > 0 then                                         00720000
+              _PFX = LEFT(_ARGS,_PREFIXLEN);                            00730000
+         else,                                                          00740000
+              _PFX = '';                                                00750000
+         if _SUFFIXLEN > 0 then                                         00760000
+              _SFX = SUBSTR(_ARGS,_SUFFIXPOS);                          00770000
+         else,                                                          00780000
+              _SFX = '';                                                00790000
+         /* Reconstruct parameter strings */                            00800000
+         _ARGS = _PFX _SFX;                                             00810000
+         _UCARGS = TRANSLATE(_ARGS);                                    00820000
+    end;                                                                00830000
+                                                                        00840000
+/* If ISPF is requiRED, make it so */                                   00850000
+if _ISPF = 'YES' then,                                                  00860000
+    do;                                                                 00870000
+         if SYSVAR('SYSISPF') <> 'ACTIVE' then,                         00880000
+             do;                                                        00890000
+                  "ISPSTART CMD(%"THIS_" "INPARMS")",                   00900000
+                       "BDISPMAX(999999)",                              00910000
+                       ;                                                00920000
+                  return RC;                                            00930000
+             end;                                                       00940000
+                                                                        00950000
+         address ISPEXEC "CONTROL ERRORS RETURN";                       00960000
+    end;                                                                00970000
+                                                                        00980000
+/* Parameter extraction */                                              00990000
+_WORK = _UCARGS;                                                        01000000
+do ZIX = 1 WHILE POS('(',_WORK) > 0;                                    01010000
+    parse value STRIP(_WORK,'Both'),                                    01020000
+         with _PARM '(' _VALUE ')' _WORK;                               01030000
+    PARMS.ZIX = _PARM;                                                  01040000
+    PARMS._PARM = _VALUE;                                               01050000
+    PARMS.0 = ZIX;                                                      01060000
+    /* Also store value in original case */                             01070000
+    _OFFSET = POS(_PARM'(',_UCARGS) + LENGTH(_PARM'(');                 01080000
+    PARMSO._PARM = SUBSTR(_ARGS,_OFFSET,LENGTH(PARMS._PARM));           01090000
+end ZIX;                                                                01100000
+                                                                        01110000
+/* Set up message logging, if requiRED or requested */                  01120000
+if _LOG = 'YES',                                                        01130000
+  |,                                                                    01140000
+   LEFT(PARMS.LOG,1) = 'Y' then,                                        01150000
+    do;                                                                 01160000
+        if LISTDSI('$SAYLOG$ FILE') > 4 then,                           01170000
+             if SYSREASON <> 3 then,                                    01180000
+                  do;                                                   01190000
+                       "ALLOC FI($SAYLOG$)",                            01200000
+                            "UNIT(3390)",                               01210000
+                            "SPACE(5 5)",                               01220000
+                            "CYLINDERS",                                01230000
+                            "RELEASE",                                  01240000
+                            "NEW",                                      01250000
+                            "CATALOG",                                  01260000
+                            "BLKSIZE(0)",                               01270000
+                            "LRECL(2044)",                              01280000
+                            "RECFM(V B)"                                01290000
+                       _LOGCLOSE = 'Y';                                 01300000
+                  end;                                                  01310000
+    end;                                                                01320000
+/* end logging */                                                       01330000
+                                                                        01340000
+/* Set return logic appropriate to our environment */                   01350000
+_END_EXEC = 'return MAXRC;';                                            01360000
+if _LOGCLOSE = 'Y' then,                                                01370000
+    _END_EXEC = '"EXECIO 0 DISKW $SAYLOG$ (FINIS";',                    01380000
+         '"FREE FI($SAYLOG$)";',                                        01390000
+         _END_EXEC;                                                     01400000
+/* If running under ISPF, then exposing the return code to              01410000
+   the 'outside world' requires saving it as the shaRED pool            01420000
+   variable: ZISPFRC */                                                 01430000
+if SYSVAR('SYSISPF') = 'ACTIVE' then,                                   01440000
+    _END_EXEC = 'ZISPFRC = MAXRC;',                                     01450000
+         'address ISPEXEC "VPUT (ZISPFRC) SHARED";',                    01460000
+         _END_EXEC;                                                     01470000
+                                                                        01480000
+/* Environment Validation */                                            01490000
+/* Sample:                                                              01500000
+if SYMBOL('PARMS.PARM') <> 'VAR' then,                                  01510000
+    do;                                                                 01520000
+         call SAYLOG TIME(),                                            01530000
+              THIS_,                                                    01540000
+              '*ERROR* REQUIRED PARAMETER',                             01550000
+              'PARM()',                                                 01560000
+              'NOT PROVIDED - ABORTING';                                01570000
+         MAXRC = MAX(MAXRC,8);                                          01580000
+    end;                                                                01590000
+else,                                                                   01600000
+    do;                                                                 01610000
+         if /* check for specific values, format. etc.                  01620000
+               if requiRED */ then,                                     01630000
+              do;                                                       01640000
+                   call SAYLOG TIME(),                                  01650000
+                        THIS_,                                          01660000
+                        '*ERROR* PARAMETER VALUE',                      01670000
+                        'PARM('PARMS.PARM')',                           01680000
+                        'IS INVALID - ABORTING';                        01690000
+                   MAXRC = MAX(MAXRC,8);                                01700000
+              end;                                                      01710000
+    end;                                                                01720000
+*/                                                                      01730000
+if LISTDSI('INPUT05 FILE') > 4 then,                                    01740003
+    if SYSREASON <> 3 then,                                             01750000
+         do;                                                            01760000
+              call SAYLOG DATE(),                                       01770000
+                   TIME(),                                              01780000
+                   THIS_,                                               01790000
+                   '*ERROR*: REQUIRE FILE INPUT05 NOT ALLOCATED',       01800003
+                   ;                                                    01810000
+              MAXRC = MAX(MAXRC,8);                                     01820000
+         end;                                                           01830000
+                                                                        01840000
+/* If errors were found, abort - but only after having                  01850000
+   presented the user with *all* the problems.                          01860000
+   (I --hate-- code that beats the user to death, one                   01870000
+    error at a time, aborting after it finds the first                  01880000
+    issue) */                                                           01890000
+if MAXRC > 4 then,                                                      01900000
+    do;                                                                 01910000
+         call SAYLOG DATE(),                                            01920000
+              TIME(),                                                   01930000
+              THIS_,                                                    01940000
+              'ABORTING DUE TO ABOVE ERRORS';                           01950000
+         interpret _END_EXEC;                                           01960000
+    end;                                                                01970000
+                                                                        01980000
+/* Meat begins here */                                                  01990000
+                                                                        02000000
+/* Set up some useful 'stuff' */                                        02010000
+                                                                        02020000
+/* Time to get to work */                                               02030000
+_DIGITS = 16;                                                           02040008
+NUMERIC DIGITS _DIGITS;                                                 02050008
+SEEDLIST = '';                                                          02060000
+do READLOOP = 1;                                                        02070000
+    "EXECIO 1 DISKR INPUT05";                                           02080003
+    if RC <> 0 then,                                                    02090000
+         do;                                                            02100000
+              "EXECIO 0 DISKR INPUT05 (FINIS";                          02110003
+              leave READLOOP;                                           02120000
+         end;                                                           02130000
+    parse pull BUFFER;                                                  02140000
+    if POS('seeds:',BUFFER) > 0 then,                                   02150000
+         do;                                                            02160000
+              parse value BUFFER with,                                  02170000
+                   'seeds:' _TAIL;                                      02180000
+              SEEDLIST = SEEDLIST,                                      02190000
+                   STRIP(_TAIL,'Both');                                 02200000
+              do WIX = 1 to WORDS(SEEDLIST);                            02210000
+                   _DIGITS = MAX(_DIGITS,LENGTH(WORD(SEEDLIST,WIX)));   02220001
+              end WIX;                                                  02230000
+              iterate READLOOP;                                         02240000
+         end;                                                           02250000
+                                                                        02260000
+    if WORDS(BUFFER) = 0 then,                                          02270000
+         iterate READLOOP;                                              02280000
+                                                                        02290000
+    /* Map header? */                                                   02300000
+    if POS('MAP:',TRANSLATE(BUFFER)) > 0 then,                          02310000
+         do;                                                            02320000
+              parse upper value BUFFER with,                            02330000
+                   MAP .;                                               02340000
+              MAP = TRANSLATE(MAP,'_','-');                             02350000
+              /* Expose the map structure to procedures */              02360000
+              /*  */                                                    02370001
+              EXPOSE_ = EXPOSE_,                                        02380000
+                   MAP'.';                                              02390000
+              /* */                                                     02400001
+              iterate READLOOP;                                         02410000
+         end;                                                           02420000
+    if WORDS(BUFFER) = 3 then,                                          02430000
+         do;                                                            02440000
+              parse value BUFFER with,                                  02450000
+                   DST SRC RNG .;                                       02460000
+              /* */                                                     02470001
+              LSS = SRC + RNG - 1; /* Last src value */                 02480000
+              LSD = DST + RNG - 1; /* Last dst value */                 02490000
+              /* */                                                     02500001
+              if SYMBOL(MAP'.0') <> 'VAR' then,                         02510000
+                   call VALUE MAP'.0',0;                                02520000
+              ZIX = VALUE(MAP'.0') + 1;                                 02530000
+              call VALUE MAP'.'ZIX'._DEST',DST * 1;                     02540007
+              call VALUE MAP'.'ZIX'._SRCE',SRC * 1;                     02550007
+              call VALUE MAP'.'ZIX'._RANG',RNG * 1;                     02560007
+              /* */                                                     02570001
+              call VALUE MAP'.'ZIX'._LSRC',LSS * 1;                     02580007
+              call VALUE MAP'.'ZIX'._LDST',LSD * 1;                     02590007
+              /* */                                                     02600001
+              call VALUE MAP".0",ZIX;                                   02610000
+              _DIGITS = MAX(_DIGITS,,                                   02620000
+                            LENGTH(SRC+RNG),,                           02630001
+                            LENGTH(DST+RNG),,                           02640001
+                           );                                           02650000
+         end;                                                           02660000
+end READLOOP;                                                           02670000
+"EXECIO * DISKR INPUT05 (stem CARDS. FINIS";                            02680003
+                                                                        02690000
+/* might be helpful to sort all the tables in order by                  02700000
+   _SRCE value to speed lookup (for part 2) */                          02710000
+                                                                        02720000
+SRCD = MAP_SORT('SEED_TO_SOIL','ASCENDING','_SRCE');                    02730007
+SRCD = MAP_SORT('SOIL_TO_FERTILIZER','ASCENDING','_SRCE');              02740007
+SRCD = MAP_SORT('FERTILIZER_TO_WATER','ASCENDING','_SRCE');             02750007
+SRCD = MAP_SORT('WATER_TO_LIGHT','ASCENDING','_SRCE');                  02760007
+SRCD = MAP_SORT('LIGHT_TO_TEMPERATURE','ASCENDING','_SRCE');            02770007
+SRCD = MAP_SORT('TEMPERATURE_TO_HUMIDITY','ASCENDING','_SRCE');         02780007
+SRCD = MAP_SORT('HUMIDITY_TO_LOCATION','ASCENDING','_SRCE');            02790007
+                                                                        02800002
+/* Part 1 logic - SEEDLIST contains individual seed values */           02810008
+MINLOC = COPIES('9',_DIGITS);                                           02820001
+do ZIX = 1 to WORDS(SEEDLIST);                                          02830000
+    SEED = WORD(SEEDLIST,ZIX);                                          02840000
+    SOIL = MAP_LOOKUP('SEED_TO_SOIL',SEED);                             02850000
+    FERT = MAP_LOOKUP('SOIL_TO_FERTILIZER',SOIL);                       02860000
+    WATR = MAP_LOOKUP('FERTILIZER_TO_WATER',FERT);                      02870000
+    LITE = MAP_LOOKUP('WATER_TO_LIGHT',WATR);                           02880000
+    TEMP = MAP_LOOKUP('LIGHT_TO_TEMPERATURE',LITE);                     02890000
+    HUMD = MAP_LOOKUP('TEMPERATURE_TO_HUMIDITY',TEMP);                  02900000
+    LOCN = MAP_LOOKUP('HUMIDITY_TO_LOCATION',HUMD);                     02910000
+    /*                                                                  02920001
+    call SAYLOG 'SEED:',                                                02930008
+         SEED,                                                          02940001
+         'SOIL:',                                                       02950001
+         SOIL,                                                          02960001
+         'FERT:',                                                       02970001
+         FERT,                                                          02980001
+         'WATR:',                                                       02990001
+         WATR,                                                          03000001
+         'LITE:',                                                       03010001
+         LITE,                                                          03020001
+         'TEMP:',                                                       03030001
+         TEMP,                                                          03040001
+         'HUMD:',                                                       03050001
+         HUMD,                                                          03060001
+         'LOCN:',                                                       03070001
+         LOCN;                                                          03080001
+       */                                                               03090001
+    LOC.LOCN = SEED;                                                    03100000
+    MINLOC = MIN(MINLOC,LOCN);                                          03110000
+end ZIX;                                                                03120000
+call SAYLOG 'SEED:',                                                    03130008
+    LOC.MINLOC,                                                         03140000
+    'AT LOCATION',                                                      03150000
+    MINLOC,                                                             03160000
+    'IS LOWEST';                                                        03170000
+                                                                        03180007
+/* End of Part 1                                                        03190008
+interpret _END_EXEC;                                                    03200004
+   */                                                                   03210006
+                                                                        03220001
+/* Part 2 logic - SEEDLIST contains paired SEED RANGE values */         03230008
+MAPS = 'SEED_TO_SOIL',                                                  03240002
+       'SOIL_TO_FERTILIZER',                                            03250002
+       'FERTILIZER_TO_WATER',                                           03260002
+       'WATER_TO_LIGHT',                                                03270002
+       'LIGHT_TO_TEMPERATURE',                                          03280002
+       'TEMPERATURE_TO_HUMIDITY',                                       03290002
+       'HUMIDITY_TO_LOCATION',                                          03300002
+       ;                                                                03310002
+                                                                        03320002
+RNGIN = SEEDLIST;                                                       03330008
+/*                                                                      03340008
+call SAYLOG "RNGIN: "RNGIN;                                             03350008
+   */                                                                   03360008
+MAP = MAPS.1;                                                           03370008
+do MIX = 1 to WORDS(MAPS);                                              03380008
+    MAP = WORD(MAPS,MIX);                                               03390008
+    /*                                                                  03391008
+    call SAYLOG MAP,                                                    03400008
+         'INPUT',                                                       03410008
+         RNGIN,                                                         03420008
+         ;                                                              03430008
+       */                                                               03431008
+    RNGOUT = '';                                                        03440008
+    do RIX = 1 to (WORDS(RNGIN) - 1) by 2;                              03450008
+        RSLT = MAP_LOOKUP(MAP,,                                         03460008
+                            WORD(RNGIN,RIX),,                           03470008
+                            WORD(RNGIN,RIX + 1),                        03480008
+                           );                                           03490008
+        RNGOUT = STRIP(RNGOUT RSLT,'Both');                             03500008
+        /*                                                              03510008
+        call SAYLOG 'RNGOUT FROM',                                      03520008
+             MAP':',                                                    03530008
+            'FOR INPUT',                                                03540008
+            WORD(RNGIN,RIX)':'WORD(RNGIN, RIX + 1),                     03550008
+            'IS',                                                       03560008
+            RNGOUT,                                                     03570008
+            ;                                                           03580008
+           */                                                           03590008
+    end RIX;                                                            03600008
+    RNGIN = RNGOUT;                                                     03610008
+end MIX;                                                                03620008
+/*                                                                      03630008
+call SAYLOG 'RESULTS AFTER ALL MAPS',                                   03640008
+    RNGOUT;                                                             03650008
+   */                                                                   03660008
+LOWEST = COPIES('9',16);                                                03670008
+/* Find the lowest location number */                                   03680008
+do ZIX = 1 to (WORDS(RNGOUT) - 1) by 2;                                 03690008
+    LOWEST = MIN(LOWEST,WORD(RNGOUT,ZIX));                              03700008
+end ZIX;                                                                03710008
+call SAYLOG 'PART 2 LOWEST LOCATION',                                   03720008
+    LOWEST;                                                             03730008
+interpret _END_EXEC;                                                    03740008
+                                                                        03750000
+MAP_SORT:                                                               03760000
+    procedure expose (EXPOSE_);                                         03770001
+    arg MAP;                                                            03780000
+    _ORDER = 'ASCENDING';                                               03790002
+    if ARG(2,'Exists') then,                                            03800002
+         if ARG(2) = 'DESCENDING' then,                                 03810002
+              do;                                                       03820002
+                   _ORDER = ARG(2);                                     03830002
+              end;                                                      03840002
+    _KEY = '_SRCE';                                                     03850002
+    if ARG(3,'Exists') then,                                            03860002
+         if SYMBOL(MAP'.1.'ARG(3)) = 'VAR' then,                        03870002
+              _KEY = ARG(3);                                            03880002
+                                                                        03890000
+    do OUTER=1 until SWAP = 0;                                          03900000
+         SWAP = 0;                                                      03910000
+         do INNER = 1 to VALUE(MAP'.0') - 1;                            03920000
+              if _ORDER = 'DESCENDING' then,                            03930002
+                   _RESULT = VALUE(MAP'.'INNER'.'_KEY) <,               03940002
+                             VALUE(MAP'.'INNER+1'.'_KEY);               03950002
+              else,                                                     03960002
+                   _RESULT = VALUE(MAP'.'INNER'.'_KEY) >,               03970002
+                             VALUE(MAP'.'INNER+1'.'_KEY);               03980002
+              if _RESULT then,                                          03990002
+                   do;                                                  04000000
+                        SWAP = 1;                                       04010000
+                        HOLDSRC = VALUE(MAP'.'INNER'._SRCE');           04020000
+                        call VALUE MAP'.'INNER'._SRCE',,                04030000
+                                   VALUE(MAP'.'INNER+1'._SRCE');        04040000
+                        call VALUE MAP'.'INNER+1'._SRCE',,              04050000
+                                   HOLDSRC;                             04060000
+                        HOLDDST = VALUE(MAP'.'INNER'._DEST');           04070000
+                        call VALUE MAP'.'INNER'._DEST',,                04080000
+                                   VALUE(MAP'.'INNER+1'._DEST');        04090000
+                        call VALUE MAP'.'INNER+1'._DEST',,              04100000
+                                   HOLDDST;                             04110000
+                        HOLDRNG = VALUE(MAP'.'INNER'._RANG');           04120000
+                        call VALUE MAP'.'INNER'._RANG',,                04130000
+                                   VALUE(MAP'.'INNER+1'._RANG');        04140000
+                        call VALUE MAP'.'INNER+1'._RANG',,              04150000
+                                   HOLDRNG;                             04160000
+                        HOLDLSS = VALUE(MAP'.'INNER'._LSRC');           04170000
+                        call VALUE MAP'.'INNER'._LSRC',,                04180000
+                                   VALUE(MAP'.'INNER+1'._LSRC');        04190000
+                        call VALUE MAP'.'INNER+1'._LSRC',,              04200000
+                                   HOLDLSS;                             04210000
+                        HOLDLSD = VALUE(MAP'.'INNER'._LDST');           04220000
+                        call VALUE MAP'.'INNER'._LDST',,                04230000
+                                   VALUE(MAP'.'INNER+1'._LDST');        04240000
+                        call VALUE MAP'.'INNER+1'._LDST',,              04250000
+                                   HOLDLSD;                             04260000
+                   end;                                                 04270000
+         end INNER;                                                     04280000
+    end OUTER;                                                          04290000
+    XX = MAP_DUMP(MAP);                                                 04300000
+    return 0;                                                           04310000
+                                                                        04320000
+MAP_DUMP:                                                               04330000
+    procedure expose (EXPOSE_);                                         04340001
+    arg MAP;                                                            04350000
+                                                                        04360000
+    call SAYLOG 'MAP: 'MAP,                                             04370008
+         ':'RIGHT(VALUE(MAP'.0'),6);                                    04380000
+    call SAYLOG RIGHT('ROW',8),                                         04390008
+        RIGHT('SOURCE',_DIGITS),                                        04400007
+        RIGHT('LSRC',_DIGITS),                                          04410008
+        RIGHT('DEST',_DIGITS),                                          04420008
+        RIGHT('LDST',_DIGITS),                                          04430008
+        RIGHT('RANGE',_DIGITS),                                         04440008
+        ;                                                               04450008
+    call SAYLOG COPIES('-',8),                                          04460008
+        COPIES('-',_DIGITS),                                            04470007
+        COPIES('-',_DIGITS),                                            04480007
+        COPIES('-',_DIGITS),                                            04490007
+        COPIES('-',_DIGITS),                                            04500007
+        COPIES('-',_DIGITS),                                            04510008
+        ;                                                               04520008
+    do ZIX = 1 to VALUE(MAP'.0');                                       04530000
+         call SAYLOG RIGHT(ZIX,6)' :',                                  04540008
+             RIGHT(VALUE(MAP'.'ZIX'._SRCE'),_DIGITS),                   04550001
+             RIGHT(VALUE(MAP'.'ZIX'._LSRC'),_DIGITS),                   04560008
+             RIGHT(VALUE(MAP'.'ZIX'._DEST'),_DIGITS),                   04570001
+             RIGHT(VALUE(MAP'.'ZIX'._LDST'),_DIGITS),                   04580008
+             RIGHT(VALUE(MAP'.'ZIX'._RANG'),_DIGITS),                   04590001
+             ;                                                          04600001
+    end ZIX;                                                            04610000
+    call SAYLOG COPIES('*',80);                                         04620008
+    call SAYLOG ' ';                                                    04630008
+    return 0;                                                           04640000
+                                                                        04650000
+MAP_LOOKUP:                                                             04660000
+    procedure expose (EXPOSE_);                                         04670001
+    /* On entry:                                                        04680002
+       Parameters:                                                      04690008
+         1) table name                                                  04700008
+         2) source value                                                04710008
+         3) (optional) If present, contains a range value               04720008
+            indicating the number of contiguous source                  04730008
+            values beginning at parm 2 inclusive                        04740008
+       Returns:                                                         04750008
+         (If two inputs provided)                                       04760008
+              Translated output value from selected table               04770008
+         (If three inputs provided)                                     04780008
+              One or more PAIRS of values as needed to                  04790008
+              provide translated input values.                          04800008
+              Multiple pairs of output values will be needed            04810008
+              in cases where the input 'range' could not be             04820008
+              completely satisfied using a single entry in              04830008
+              the indicated translate table.                            04840008
+    */                                                                  04850002
+    arg MAP,SOURCE;                                                     04860008
+    if ARG(3,'Exists') then,                                            04870008
+         do;                                                            04880008
+              RANGE = ARG(3);                                           04890008
+              LAST = SOURCE + RANGE - 1;                                04900008
+         end;                                                           04910008
+    else,                                                               04920008
+         LAST = SOURCE;                                                 04930008
+                                                                        04940002
+    /*                                                                  04950008
+    call SAYLOG MAP,                                                    04960008
+         'INPUT',                                                       04970008
+         SOURCE':'RANGE,                                                04980008
+         ;                                                              04990008
+       */                                                               05000008
+    FOUND = 0; /* Nothing found, yet.. */                               05010008
+    OUTPUT = '';                                                        05020008
+    do YIX = 1 to VALUE(MAP'.0'); /* For each map entry, get ..*/       05030008
+         SRCEL = VALUE(MAP'.'YIX'._SRCE'); /* Source start */           05040008
+         SRCEH = VALUE(MAP'.'YIX'._LSRC'); /* Source end */             05050008
+         DESTL = VALUE(MAP'.'YIX'._DEST'); /* Output start */           05060008
+         DESTH = VALUE(MAP'.'YIX'._LDST'); /* Output end */             05070008
+                                                                        05080008
+         if SOURCE > SRCEH |,  /* Starts past the end ... */            05090008
+            LAST < SRCEL then, /* ...or stops before the beginning */   05100008
+              do;                                                       05110008
+                   /* No part of source applies to this                 05120008
+                      table entry */                                    05130008
+                   /*                                                   05140008
+                   call SAYLOG MAP,                                     05150008
+                        YIX,                                            05160008
+                        'TOO LOW',                                      05170008
+                        ;                                               05180008
+                      */                                                05190008
+                   iterate YIX;                                         05200008
+              end;                                                      05210008
+                                                                        05220008
+         if SOURCE >= SRCEL &,  /* Starts past the beginning ... */     05230008
+            LAST <= SRCEH then, /* ... and stops before the end  */     05240008
+              do;                                                       05250008
+                   /* Fits completely in this table entry */            05260008
+                   OFFSET = SOURCE - SRCEL;                             05270008
+                   OUTPUT = OUTPUT,                                     05280008
+                            DESTL + OFFSET;                             05290008
+                   if ARG(3,'Exists') then,                             05300008
+                        OUTPUT = OUTPUT,                                05310008
+                             RANGE;                                     05320008
+                   /*                                                   05330008
+                   call SAYLOG MAP,                                     05340008
+                        YIX,                                            05350008
+                        'PERFECT FIT',                                  05360008
+                        'START AT OFFSET',                              05370008
+                        OFFSET,                                         05380008
+                        'FOR RANGE',                                    05390008
+                        RANGE,                                          05400008
+                        'INPUT',                                        05410008
+                        SOURCE':'RANGE,                                 05420008
+                        'OUTPUT',                                       05430008
+                        DESTL + OFFSET':'RANGE,                         05440008
+                        ;                                               05450008
+                      */                                                05460008
+                   OUTPUT = STRIP(OUTPUT,'Both');                       05470008
+                   FOUND = 1;                                           05480008
+                   leave YIX;                                           05490008
+              end;                                                      05500008
+                                                                        05510008
+         if SOURCE < SRCEL &,   /* Starts before the beginning ... */   05520008
+            LAST >= SRCEL &,    /* ... stops after the beginning . */   05530008
+            LAST <= SRCEH then, /* ... and stops before the end    */   05540008
+              do;                                                       05550008
+                   /* Partial fit with N/A fragment on the              05560008
+                      front end */                                      05570008
+                   /* Split off the low fragment */                     05580008
+                   BGN = SOURCE;                                        05590008
+                   BGNR = SRCEL - SOURCE;                               05600008
+                   /*                                                   05610008
+                   call SAYLOG MAP,                                     05620008
+                       YIX,                                             05630008
+                       'FRAGMENT LOW',                                  05640008
+                        BGN':'BGNR,                                     05650008
+                        'ENTRY',                                        05660008
+                        SRCEL':'SRCEH,                                  05670008
+                        ;                                               05680008
+                      */                                                05690008
+                   /* Recursive calls */                                05700008
+                   OUTPUT = STRIP(OUTPUT,                               05710008
+                                  MAP_LOOKUP(MAP,BGN,BGNR),,            05720008
+                                  'Both');                              05730008
+                   RANGEU = LAST - SRCEL + 1;                           05740008
+                   /*                                                   05750008
+                   call SAYLOG MAP,                                     05760008
+                       YIX,                                             05770008
+                       'NEW BASE',                                      05780008
+                        SRCEL':'RANGEU,                                 05790008
+                        ;                                               05800008
+                      */                                                05810008
+                   OUTPUT = STRIP(OUTPUT,                               05820008
+                                  MAP_LOOKUP(MAP,SRCEL,RANGEU),,        05830008
+                                  'Both');                              05840008
+                   FOUND = 1;                                           05850008
+                   leave YIX;                                           05860008
+              end;                                                      05870008
+                                                                        05880008
+         if SOURCE >= SRCEL &,  /* Starts after the beginning ... */    05890008
+            SOURCE <= SRCEH &,  /* .. and before the end ...      */    05900008
+            LAST > SRCEH then,  /* .. but stops past the end      */    05910008
+              do;                                                       05920008
+                   /* Partial fit with N/A fragment on the              05930008
+                      back end */                                       05940008
+                   ENDR = SRCEH - SOURCE + 1; /* Adjust range */        05950008
+                   /* Recursive calls */                                05960008
+                   /*                                                   05970008
+                   call SAYLOG MAP,                                     05980008
+                       YIX,                                             05990008
+                       'TRUNCATED SHOULD FIT',                          06000008
+                       BGN':'BGNR,                                      06010008
+                       ;                                                06020008
+                      */                                                06030008
+                   OUTPUT = STRIP(OUTPUT,                               06040008
+                                  MAP_LOOKUP(MAP,SOURCE,ENDR),,         06050008
+                                  'Both');                              06060008
+                   BGN = SRCEH + 1; /* Adjust start */                  06070008
+                   LAST = LAST - SRCEH; /* Adjust end */                06080008
+                   /*                                                   06090008
+                   call SAYLOG MAP,                                     06100008
+                       YIX,                                             06110008
+                       'FRAGMENT HIGH',                                 06120008
+                       SRCEH + 1':'LAST,                                06130008
+                       ;                                                06140008
+                      */                                                06150008
+                   OUTPUT = STRIP(OUTPUT,                               06160008
+                                  MAP_LOOKUP(MAP,BGN,LAST),,            06170008
+                                  'Both');                              06180008
+                   FOUND = 1;                                           06190008
+                   leave YIX;                                           06200008
+              end;                                                      06210008
+    end YIX;                                                            06220000
+    if \ FOUND then,                                                    06230008
+         do;                                                            06240008
+              /* Lookup failed - return original values */              06250008
+              /*                                                        06260008
+              call SAYLOG MAP,                                          06270008
+                   'NO MATCH FOUND',                                    06280008
+                   SOURCE':'RANGE,                                      06290008
+                   ;                                                    06300008
+                 */                                                     06310008
+              OUTPUT = OUTPUT,                                          06320008
+                       SOURCE;                                          06330008
+              if ARG(3,'Exists') then,                                  06340008
+                   OUTPUT = OUTPUT,                                     06350008
+                        RANGE;                                          06360008
+              OUTPUT = STRIP(OUTPUT,'Both');                            06370008
+         end;                                                           06380008
+                                                                        06390002
+    return OUTPUT;                                                      06400008
+                                                                        06410002
+TRAPPIT:                                                                06420002
+    call SAYLOG '***ERROR*** 'RC;                                       06430008
+    call SAYLOG 'HAPPENED ON: 'SIGL;                                    06440008
+    call SAYLOG SOURCELINE(SIGL);                                       06450008
+    interpret _END_EXEC;                                                06460000
+                                                                        06470000
+SAYLOG:                                                                 06480000
+    procedure expose (EXPOSE_);                                         06490001
+                                                                        06500000
+    /*                                                                  06510000
+         Function to "fork" a message both to the terminal user and to  06520000
+         a log dataset, if one has been provided.                       06530000
+                                                                        06540000
+         Input:                                                         06550000
+              Parameters:                                               06560000
+                   raw text of message                                  06570000
+                                                                        06580000
+              Datasets:                                                 06590000
+                   $SAYLOG$         : (Optional)                        06600000
+                                      If provided, must be allocated to 06610000
+                                      a dataset that can be written to. 06620000
+                                                                        06630000
+         Output:                                                        06640000
+              Function result:                                          06650000
+                   Numeric return code                                  06660000
+                                                                        06670000
+     */                                                                 06680000
+                                                                        06690000
+     parse SOURCE . . THIS_ .;                                          06700000
+     THIS_ = STRIP(THIS_,'Both')'_SAYLOG';                              06710000
+     MAXRC = 0;                                                         06720000
+                                                                        06730000
+     /* Process incoming parameters */                                  06740000
+     parse arg _MSG_TEXT;                                               06750000
+     if POS('NOTERM',_MSG_TEXT) = 1 then,                               06760000
+         _MSG_TEXT = SUBSTR(_MSG_TEXT,7);                               06770000
+     else,                                                              06780000
+       /* Very simple code... */                                        06790000
+       say _MSG_TEXT;                                                   06800008
+                                                                        06810000
+     /* Were we provided an output file? */                             06820000
+     if LISTDSI('$SAYLOG$ FILE') > 4 then,                              06830000
+         if SYSREASON <> 3 then,                                        06840000
+              return MAXRC; /* Nope, we're done */                      06850000
+                                                                        06860000
+     /* Looks like we have one */                                       06870000
+     queue DATE('Standard'),                                            06880000
+           TIME(),                                                      06890000
+           SYSVAR('SYSUID'),                                            06900000
+           _MSG_TEXT;                                                   06910000
+     "EXECIO 1 DISKW $SAYLOG$";                                         06920000
+     MAXRC = MAX(MAXRC,RC);                                             06930000
+                                                                        06940000
+     return MAXRC;                                                      06950000
+                                                                        06960000
